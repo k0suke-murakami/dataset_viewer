@@ -152,6 +152,27 @@ class PcdReaderPublisher:
         box_marker.color = std_msgs.msg.ColorRGBA(0, 0.4, 0.8, 0.9)
 
         return box_marker
+        
+        
+    def create_arrow_marker(self, pos_x, pos_y, pos_z, dim_x, dim_y, dim_z, angle, header, marker_id):
+        q = tf.transformations.quaternion_from_euler(0.0, 0.0, angle)
+        arrow_marker = visualization_msgs.msg.Marker()
+        arrow_marker.ns = 'arrow_markers'
+        arrow_marker.id = marker_id
+        arrow_marker.type = visualization_msgs.msg.Marker.ARROW
+        arrow_marker.action = visualization_msgs.msg.Marker.ADD
+        arrow_marker.lifetime = rospy.Duration(self.marker_life_)
+        arrow_marker.pose.position.x = pos_z
+        arrow_marker.pose.position.y = -pos_x
+        arrow_marker.pose.position.z = -dim_z/2.0
+        arrow_marker.scale.x = dim_x
+        arrow_marker.scale.y = dim_y
+        arrow_marker.scale.z = dim_z
+        arrow_marker.header = header
+        arrow_marker.pose.orientation = geometry_msgs.msg.Quaternion(*q)
+        arrow_marker.color = std_msgs.msg.ColorRGBA(1.0, 0., 0., 0.9)
+
+        return arrow_marker
 
     def get_markers_from_file(self, annotation_file, stamp, frame):
         np_file = np.loadtxt(annotation_file, dtype=str)
@@ -186,9 +207,13 @@ class PcdReaderPublisher:
 
             text_marker = self.create_text_marker(tx, ty, tz, track_id, label, header, self.marker_id_)
             self.marker_id_ = self.marker_id_ + 1
+            
+            arrow_marker = self.create_arrow_marker(tx, ty, tz, l, w, h, rz, header, self.marker_id_)            
+            self.marker_id_ = self.marker_id_ + 1
 
             vis_markers.markers.append(box_marker)
             vis_markers.markers.append(text_marker)
+            vis_markers.markers.append(arrow_marker)
 
         return vis_markers
 
@@ -201,36 +226,36 @@ class PcdReaderPublisher:
         return matching
 
     def run(self):
-        ros_rate = rospy.Rate(self.rate_)
+        # ros_rate = rospy.Rate(self.rate_)
+        ros_rate = rospy.Rate(1)
 
         pcds_in_dir = self.get_files_in_dir(self.data_folder_)
         txts_in_dir = self.get_files_in_dir(self.annotations_folder_)
 
-        try:
-            for f in pcds_in_dir:
-                if not rospy.is_shutdown():
-                    current_pcd = join(self.data_folder_, f)
-                    current_ann = self.get_annotation_file_for_pcd(current_pcd, txts_in_dir)
-                    rospy.loginfo("[%s] Reading PCD file %s", self.app_name__, f)
+        print(self.data_folder_)
+        print(pcds_in_dir)
+        
+        #visualize only one pcd files
+        for f in pcds_in_dir: 
+            while not rospy.is_shutdown():
+                current_pcd = join(self.data_folder_, f)
+                current_ann = self.get_annotation_file_for_pcd(current_pcd, txts_in_dir)
+                rospy.loginfo("[%s] Reading PCD file %s", self.app_name__, f)
 
-                    if isfile(current_pcd):
-                        cloud_msg = self.convert_pcd_to_ros_cloud(current_pcd, rospy.Time.now(), self.frame_id_)
+                if isfile(current_pcd):
+                    cloud_msg = self.convert_pcd_to_ros_cloud(current_pcd, rospy.Time.now(), self.frame_id_)
 
-                        markers_msg = self.get_markers_from_file(join(self.annotations_folder_, current_ann[0]),
-                                                                     rospy.Time.now(), self.frame_id_)
-                        self.marker_publisher_.publish(markers_msg)
-                        self.cloud_publisher_.publish(cloud_msg)
+                    markers_msg = self.get_markers_from_file(join(self.annotations_folder_, current_ann[0]),
+                                                                    rospy.Time.now(), self.frame_id_)
+                    self.marker_publisher_.publish(markers_msg)
+                    self.cloud_publisher_.publish(cloud_msg)
 
-                    else:
-                        rospy.loginfo("[%s] Invalid/Empty PCD file %s", self.app_name__, current_pcd)
                 else:
-                    return
-        except Exception as e:
-            rospy.logerr(e.message)
-        ros_rate.sleep()
+                    rospy.loginfo("[%s] Invalid/Empty PCD file %s", self.app_name__, current_pcd)
+    
+                ros_rate.sleep()
 
 if __name__ == '__main__':
     rospy.init_node('pcd_reader_publisher', anonymous=True)
     pcd_reader = PcdReaderPublisher()
     pcd_reader.run()
-    rospy.spin()
